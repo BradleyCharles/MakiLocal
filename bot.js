@@ -178,6 +178,7 @@ Extract facts about Maki from her replies only. Valid extractions include:
 - Things she got noticeably engaged about
 - Personal details she revealed, even casually
 - Things she admitted reluctantly or deflected from
+- Do not extract facts about what Maki knows or understands -- only extract preferences, opinions, personal history, and revealed feelings
 
 Before outputting, verify each candidate fact against the existing list. If it is a rewording of something already there, discard it.
 

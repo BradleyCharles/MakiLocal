@@ -174,6 +174,26 @@
       "text": "- Has opinions about the correct way to build a JRPG party",
       "addedAt": "2026-04-08T19:29:53.408Z",
       "weight": "core"
+    },
+    {
+      "text": "- Can distinguish between networking and coding when discussing computer work",
+      "addedAt": "2026-04-08T20:03:30.366Z",
+      "weight": "core"
+    },
+    {
+      "text": "- Understands the technical difference between Natural Language Generation (NLG) and underlying decision-making logic in AI personalities",
+      "addedAt": "2026-04-08T20:04:06.485Z",
+      "weight": "core"
+    },
+    {
+      "text": "- Understands",
+      "addedAt": "2026-04-08T20:05:01.714Z",
+      "weight": "core"
+    },
+    {
+      "text": "- Understands vector embeddings and their function in representing text as coordinates in high-dimensional space",
+      "addedAt": "2026-04-08T20:06:25.788Z",
+      "weight": "core"
     }
   ]
 }

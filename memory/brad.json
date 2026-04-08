@@ -1,7 +1,112 @@
 {
-  "facts": [],
-  "history": [],
-  "familiarity": 60,
-  "lastSeen": "2026-04-01T19:38:00.767Z",
+  "facts": [
+    {
+      "text": "- Working on computer stuff",
+      "addedAt": "2026-04-08T20:03:16.875Z",
+      "weight": "core"
+    },
+    {
+      "text": "- Learning to create AI personalities",
+      "addedAt": "2026-04-08T20:03:52.338Z",
+      "weight": "core"
+    },
+    {
+      "text": "- Tinkering with prompt engineering and memory",
+      "addedAt": "2026-04-08T20:04:47.408Z",
+      "weight": "recent"
+    }
+  ],
+  "history": [
+    {
+      "role": "user",
+      "content": "brad: How are you today?"
+    },
+    {
+      "role": "assistant",
+      "content": "Fine. You?"
+    },
+    {
+      "role": "user",
+      "content": "brad: I'm doing well"
+    },
+    {
+      "role": "assistant",
+      "content": "Oh yeah? What's keeping you busy today?"
+    },
+    {
+      "role": "user",
+      "content": "brad: Working on computer stuff"
+    },
+    {
+      "role": "assistant",
+      "content": "Oh yeah? Like what kind of computer stuff? Are we talking networking, or more like actual coding?"
+    },
+    {
+      "role": "user",
+      "content": "brad: Coding. I'm learning to create AI personalities"
+    },
+    {
+      "role": "assistant",
+      "content": "AI personalities, huh? So you're building something that mimics internal states? Are you working more on the natural language generation side, or are you focused on the underlying decision-making logic—like, how the personality decides *what* to say based on the input?"
+    },
+    {
+      "role": "user",
+      "content": "brad: Kind of both. I'm tinkering with prompt engineering and memory"
+    },
+    {
+      "role": "assistant",
+      "content": "Memory is the tricky part, right? Because you can feed it everything, but making it actually *influence* the personality's decisions, not just making it repeat things it read, that's where the complexity is.\n\nAre you running into issues with context window management, or is it more about structuring the retrieval so the model knows *how* to integrate that past info into a new response?"
+    },
+    {
+      "role": "user",
+      "content": "brad: The tricky bit retrieval"
+    },
+    {
+      "role": "assistant",
+      "content": "So are you relying on basic keyword matching, or are you getting into vector embeddings for the retrieval? Because the difference between those two approaches makes a huge difference in how well the personality can actually *understand* the context rather than just finding similar-sounding words."
+    },
+    {
+      "role": "user",
+      "content": "brad: Tell me more about vector embeddings"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, so basically, instead of treating words as discrete items—like a dictionary lookup—vector embeddings treat words, or even whole chunks of text, as coordinates in a really high-dimensional mathematical space"
+    },
+    {
+      "role": "user",
+      "content": "brad: You didn't respond to my last message. could this be built live as the user and AI are conversing?"
+    },
+    {
+      "role": "assistant",
+      "content": "Yeah, I spaced out for a second. My bad.\n\nTo answer your question about building it live: yes, it's the core concept of Retrieval-Augmented Generation, or RAG. But making it *truly* seamless in real-time conversation is where the engineering gets messy.\n\nThe challenge isn't just retrieving the vector; it's managing the latency and the context shift."
+    },
+    {
+      "role": "user",
+      "content": "brad: I recently added a timestamp system so my AI knows when something is stale information and can mark information as core so it's always relevant"
+    },
+    {
+      "role": "assistant",
+      "content": "A timestamp system... that's smart. It addresses the decay problem head-on.\n\nBut how are you implementing the \"marking as core\"? Is it a binary flag, or does the system weigh the *frequency* of reference over time? Because just knowing something is old isn't enough; the model needs to know if it's old *but* foundational, or old *and* irrelevant."
+    },
+    {
+      "role": "user",
+      "content": "brad: The model determines if the information is a core fact before storing it and labels it as such. only \"recent\" facts are timed"
+    },
+    {
+      "role": "assistant",
+      "content": "So the model is doing the meta-classification itself. That's a huge leap.\n\nWhen the model determines if something is \"core,\" what's the prompt structure around that? Are you giving it a set of criteria—like \"core facts are definitions, character backstories, or established world rules\"—or are you letting it make that judgment based purely on the context window it's currently processing? Because that's where you risk the model deciding *it* is core, even if it's just a passing anecdote."
+    },
+    {
+      "role": "user",
+      "content": "brad: That's a good point and one worth diving into more. do you have any other insights?"
+    },
+    {
+      "role": "assistant",
+      "content": "It sounds like you're trying to build a meta-reasoning layer on top of the memory retrieval.\n\nIf the model is doing the classification, you might run into a"
+    }
+  ],
+  "familiarity": 79,
+  "lastSeen": "2026-04-08T20:11:49.374Z",
   "displayName": "brad"
 }
