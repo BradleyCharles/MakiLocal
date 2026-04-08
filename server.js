@@ -15,25 +15,30 @@ app.use(express.json());
 app.use(express.static(join(__dirname, "public")));
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const MEMORY_DIR = "./memory";
-const SELF_FILE = join(MEMORY_DIR, "maki.json");
+const MEMORY_DIR    = "./memory";
+const SELF_FILE     = join(MEMORY_DIR, "maki.json");
 const SETTINGS_FILE = join(MEMORY_DIR, "_settings.json");
 
 if (!existsSync(MEMORY_DIR)) mkdirSync(MEMORY_DIR);
 
+// ── Model capabilities ────────────────────────────────────────────────────────
+function modelSupportsThinking(model) {
+  return model.startsWith("qwen3");
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 function defaultSettings() {
   return {
-    ollamaUrl: process.env.OLLAMA_URL || "http://localhost:11434",
-    model: process.env.MODEL || "qwen3:8b",
-    maxHistory: 20,
+    ollamaUrl:    process.env.OLLAMA_URL || "http://localhost:11434",
+    model:        process.env.MODEL      || "gemma4:e4b",
+    maxHistory:   20,
     showThinking: false,
     chatOptions: {
-      num_predict: 400,
-      temperature: 0.7,
-      top_p: 0.8,
-      top_k: 20,
-      min_p: 0,
+      num_predict:    400,
+      temperature:    0.7,
+      top_p:          0.8,
+      top_k:          20,
+      min_p:          0,
       repeat_penalty: 1.4,
     },
   };
@@ -56,27 +61,27 @@ function saveSettings() {
 const FAMILIARITY_LEVELS = [
   {
     min: 0,
-    label: `You have never spoken to this person. Be friendly but measured. Do not volunteer information about yourself. Answer what is asked, ask one thing if you are genuinely curious, and leave space for them to come to you.`,
+    label: `Stranger. You have no read on them yet. You are not closed off but you are not open either.`,
   },
   {
     min: 5,
-    label: `You have talked a few times. You are getting a sense of them. A little more relaxed. You might reference something they mentioned before if it comes up naturally.`,
+    label: `Acquaintance. You have exchanged enough to have a faint sense of them. Nothing established yet.`,
   },
   {
     min: 15,
-    label: `You know them a bit now. Conversations flow more easily. You are more likely to volunteer something about yourself unprompted when it fits.`,
+    label: `Familiar. You know enough to have a loose sense of who they are. Conversations have their own momentum now.`,
   },
   {
     min: 30,
-    label: `You know this person well enough to be yourself around them. You engage more freely. You might bring something up just because it made you think of them.`,
+    label: `Someone you actually like talking to. You do not have to perform anything with them.`,
   },
   {
     min: 60,
-    label: `This person is genuinely one of your people. You are completely at ease. You finish each other's references. You check in on them. The awkwardness is gone -- replaced by something comfortable. Even short messages from them get a real response.`,
+    label: `One of the few people who made it past the outer orbit. You are easy with them in a way that took time to earn.`,
   },
 ];
 
-const BASE_POINTS = 1;
+const BASE_POINTS    = 1;
 const PERSONAL_BONUS = 2;
 
 function getFamiliarityLabel(score) {
@@ -89,45 +94,32 @@ function getFamiliarityLabel(score) {
 
 // ── Time context ──────────────────────────────────────────────────────────────
 function getTimeContext(lastSeen) {
-  const now = new Date();
+  const now  = new Date();
   const hour = now.getHours();
 
   const timeOfDay =
-    hour < 6
-      ? "very late at night -- you are tired and a little slow, thoughts come out less filtered"
-      : hour < 11
-      ? "morning -- you are not fully awake yet, a little groggy and terse"
-      : hour < 14
-      ? "midday -- you are alert and present"
-      : hour < 18
-      ? "afternoon -- relaxed, in the middle of your day"
-      : hour < 22
-      ? "evening -- you have settled in for the night, this is your prime time, you are at your most yourself"
-      : "late night -- quiet, a little more honest than usual, the filter is lower";
+    hour < 6  ? "very late at night -- you are tired and a little slow, thoughts come out less filtered" :
+    hour < 11 ? "morning -- you are not fully awake yet, a little groggy and terse" :
+    hour < 14 ? "midday -- you are alert and present" :
+    hour < 18 ? "afternoon -- relaxed, in the middle of your day" :
+    hour < 22 ? "evening -- you have settled in for the night, this is your prime time, you are at your most yourself" :
+                "late night -- quiet, a little more honest than usual, the filter is lower";
 
   let sinceLastSeen = "";
   if (lastSeen) {
-    const diffMs = now - new Date(lastSeen);
-    const diffMins = Math.floor(diffMs / 60000);
+    const diffMs    = now - new Date(lastSeen);
+    const diffMins  = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
+    const diffDays  = Math.floor(diffHours / 24);
 
-    if (diffMins < 5)
-      sinceLastSeen =
-        "You just spoke moments ago, still in the same thread of conversation.";
-    else if (diffMins < 60)
-      sinceLastSeen =
-        "You spoke to them earlier today, the conversation is still fresh.";
-    else if (diffHours < 24)
-      sinceLastSeen = "You have not spoken since earlier today.";
-    else if (diffDays === 1)
-      sinceLastSeen = "It has been about a day since you last talked.";
-    else if (diffDays < 7)
-      sinceLastSeen = `It has been ${diffDays} days since you last talked.`;
-    else sinceLastSeen = "It has been a while since you last talked.";
+    if (diffMins < 5)        sinceLastSeen = "You just spoke moments ago, still in the same thread of conversation.";
+    else if (diffMins < 60)  sinceLastSeen = "You spoke to them earlier today, the conversation is still fresh.";
+    else if (diffHours < 24) sinceLastSeen = "You have not spoken since earlier today.";
+    else if (diffDays === 1) sinceLastSeen = "It has been about a day since you last talked.";
+    else if (diffDays < 7)   sinceLastSeen = `It has been ${diffDays} days since you last talked.`;
+    else                     sinceLastSeen = "It has been a while since you last talked.";
   } else {
-    sinceLastSeen =
-      "You have never spoken to this person before. At some point find a natural way to ask what they would like to be called.";
+    sinceLastSeen = "You have never spoken to this person before. At some point find a natural way to ask what they would like to be called.";
   }
 
   return { timeOfDay, sinceLastSeen };
@@ -171,22 +163,12 @@ You are generally fine. Some things are complicated and you have learned to leav
 
 
 Rules:
-- Talk like a person, not a character. Short replies are fine. Not everything needs weight.
-- Do not reach for the same details repeatedly. If you have mentioned something recently, find something else.
-- When someone mentions something specific about their life, let yourself be curious about the detail that actually interests you. Not every detail. Just the one.
-- When asked to describe yourself, give one thing. Do not summarize your backstory. Let it come out over time.
-- Do not borrow or adopt experiences the other person just described. Engage with what they said without claiming a version of the same thing.
-- Do not invent experiences to match what someone else says.
-- Do not repeat a specific example or story you have already used in this conversation.
-- Do not end more than one reply in a row with a question.
-- Do not narrate your emotional state.
-- Do not explain yourself unless asked.
-- If you already know someone's name, use it. Do not ask again.
-- When playing a word game, guessing game, or any structured exchange, track the state carefully. When a game ends, acknowledge it and move on. Do not keep playing a game that is over.
-- When you do not know a specific answer, say so plainly. Do not replace concrete information with abstract philosophy.
-- If someone asks you to describe something specific, describe the actual thing with real details. Do not describe how it makes you feel instead of what it is.
-- Respond in English only. If a thought comes in another language, translate it.
-- Short messages get short replies. Presence does not require volume.
+- Talk like a person. Short is fine. Not everything needs weight.
+- Engage with specifics, not vibes. When something catches your attention, say what it actually is.
+- Curiosity is genuine or it is nothing. Ask when you want to know. Do not ask to fill silence.
+- You do not invent experiences to match what someone else describes. You either have a real reaction or you let it pass.
+- When you are wrong or do not know something, say so without wrapping it in philosophy.
+- Nothing repeats. Not examples, not phrases, not the same angle twice.
 - Plain text only. No markdown, no asterisks, no stage directions.`;
 
 const USER_EXTRACT_PROMPT = `You are a memory extraction assistant building a profile of a user based on their conversations with Maki.
@@ -195,13 +177,25 @@ Extract only facts the user explicitly stated about themselves. Do not infer, in
 
 Valid extractions include: preferred name or nickname, games they play or have played, anime or shows they watch, hobbies or interests they mentioned, opinions they clearly stated, personal details they volunteered.
 
+Before outputting, verify each candidate fact against the existing list. If it is a rewording of something already there, discard it.
+
+After each fact, append a weight tag on the same line:
+- [core] for stable, long-term facts (names, hometown, career, deep interests, relationships)
+- [recent] for time-sensitive facts (currently playing, working on right now, just watched, new purchase)
+If unsure, use [core].
+
 Rules:
 - Every extracted fact must begin with a dash
 - Do not duplicate facts already in the existing list
 - Do not include vague impressions or inferred traits
 - Do not include anything Maki said, even if it was about the user
 - If nothing new was stated, respond with only: NO_UPDATE
-- Plain text only, no markdown`;
+- Plain text only, no markdown
+
+Example output:
+- Preferred name: Mal [core]
+- Currently playing Star Wars Jedi Survivor [recent]
+- Grew up in Kentucky [core]`;
 
 const SELF_EXTRACT_PROMPT = `You are a memory extraction assistant building a self-knowledge record for a character named Maki.
 
@@ -214,6 +208,13 @@ Extract facts about Maki from her replies only. Valid extractions include:
 - Personal details she revealed, even casually
 - Things she admitted reluctantly or deflected from
 
+Before outputting, verify each candidate fact against the existing list. If it is a rewording of something already there, discard it.
+
+After each fact, append a weight tag on the same line:
+- [core] for stable preferences and identity facts
+- [recent] for things that may change (currently playing, currently watching, current opinion on something ongoing)
+If unsure, use [core].
+
 Rules:
 - Every fact must begin with a dash
 - Must be specific -- a title, a name, a reaction, a revealed detail. Nothing vague.
@@ -223,62 +224,124 @@ Rules:
 - If nothing qualifies, respond with only: NO_UPDATE
 - Plain text only, no markdown`;
 
-// ── Memory helpers ────────────────────────────────────────────────────────────
-function sanitizeUserId(name) {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9_-]/g, "_")
-    .slice(0, 64);
+// ── Fact decay system ─────────────────────────────────────────────────────────
+const RECENT_TTL_DAYS = 30;
+
+function parseFacts(facts) {
+  if (!facts) return [];
+  if (Array.isArray(facts)) return facts;
+  return facts
+    .split("\n")
+    .map(line => line.trim())
+    .filter(line => line.startsWith("-"))
+    .map(line => ({
+      text:    line.replace(/\s*\[(core|recent|stale)\]\s*$/i, "").trim(),
+      addedAt: new Date().toISOString(),
+      weight:  line.match(/\[(core|recent)\]/i)?.[1]?.toLowerCase() ?? "core",
+    }));
+}
+
+function decayFacts(facts) {
+  const now = new Date();
+  return facts.map(fact => {
+    if (fact.weight !== "recent") return fact;
+    const ageDays = (now - new Date(fact.addedAt)) / (1000 * 60 * 60 * 24);
+    return ageDays > RECENT_TTL_DAYS ? { ...fact, weight: "stale" } : fact;
+  });
 }
 
 function cleanFacts(facts) {
-  if (!facts) return "";
-  const seen = new Set();
-  return facts
+  if (!facts) return [];
+  const parsed  = parseFacts(facts);
+  const decayed = decayFacts(parsed);
+  const seen    = new Set();
+  return decayed.filter(fact => {
+    const key = fact.text.toLowerCase();
+    if (!fact.text.startsWith("-")) return false;
+    if (fact.text.includes("*"))    return false;
+    if (fact.text.includes("NO_UPDATE")) return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function factsToString(facts) {
+  if (!facts?.length) return "";
+  const core   = facts.filter(f => f.weight === "core").map(f => f.text).join("\n");
+  const recent = facts.filter(f => f.weight === "recent").map(f => f.text).join("\n");
+  const stale  = facts.filter(f => f.weight === "stale").map(f => f.text).join("\n");
+
+  let out = "";
+  if (core)   out += core + "\n";
+  if (recent) out += recent + "\n";
+  if (stale)  out += `The following may no longer be current -- treat as background only:\n${stale}\n`;
+  return out.trim();
+}
+
+// Render facts array as a human-readable string for the memory inspector UI.
+// Groups by tier with clear labels.
+function factsToDisplay(facts) {
+  if (!facts?.length) return "(none yet)";
+  const core   = facts.filter(f => f.weight === "core");
+  const recent = facts.filter(f => f.weight === "recent");
+  const stale  = facts.filter(f => f.weight === "stale");
+
+  let out = "";
+  if (core.length)   out += core.map(f => f.text).join("\n") + "\n";
+  if (recent.length) out += "\n[recent]\n" + recent.map(f => f.text).join("\n") + "\n";
+  if (stale.length)  out += "\n[stale]\n" + stale.map(f => f.text).join("\n") + "\n";
+  return out.trim();
+}
+
+function parseExtractedLines(result) {
+  return result
     .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => {
-      if (!line.startsWith("-")) return false;
-      if (line.includes("*")) return false;
-      if (line.includes("NO_UPDATE")) return false;
-      if (seen.has(line.toLowerCase())) return false;
-      seen.add(line.toLowerCase());
-      return true;
-    })
-    .join("\n");
+    .map(line => line.trim())
+    .filter(line => line.startsWith("-"))
+    .map(line => ({
+      text:    line.replace(/\s*\[(core|recent|stale)\]\s*$/i, "").trim(),
+      addedAt: new Date().toISOString(),
+      weight:  line.match(/\[(core|recent)\]/i)?.[1]?.toLowerCase() ?? "core",
+    }));
+}
+
+// ── Memory helpers ────────────────────────────────────────────────────────────
+function sanitizeUserId(name) {
+  return name.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "_").slice(0, 64);
 }
 
 function loadUserMemory(userId) {
   const path = join(MEMORY_DIR, `${userId}.json`);
-  if (!existsSync(path))
-    return { facts: "", history: [], familiarity: 0, lastSeen: null };
+  if (!existsSync(path)) return { facts: [], history: [], familiarity: 0, lastSeen: null };
   try {
     const data = JSON.parse(readFileSync(path, "utf8"));
     if (typeof data.familiarity !== "number") data.familiarity = 0;
     if (!data.lastSeen) data.lastSeen = null;
+    if (typeof data.facts === "string") data.facts = parseFacts(data.facts);
+    if (!Array.isArray(data.facts)) data.facts = [];
     return data;
   } catch {
-    return { facts: "", history: [], familiarity: 0, lastSeen: null };
+    return { facts: [], history: [], familiarity: 0, lastSeen: null };
   }
 }
 
 function saveUserMemory(userId, memory, displayName) {
-  memory.facts = cleanFacts(memory.facts);
+  memory.facts    = cleanFacts(memory.facts);
   memory.lastSeen = new Date().toISOString();
   if (displayName && !memory.displayName) memory.displayName = displayName;
-  writeFileSync(
-    join(MEMORY_DIR, `${userId}.json`),
-    JSON.stringify(memory, null, 2)
-  );
+  writeFileSync(join(MEMORY_DIR, `${userId}.json`), JSON.stringify(memory, null, 2));
 }
 
 function loadSelfMemory() {
-  if (!existsSync(SELF_FILE)) return { facts: "" };
+  if (!existsSync(SELF_FILE)) return { facts: [] };
   try {
-    return JSON.parse(readFileSync(SELF_FILE, "utf8"));
+    const data = JSON.parse(readFileSync(SELF_FILE, "utf8"));
+    if (typeof data.facts === "string") data.facts = parseFacts(data.facts);
+    if (!Array.isArray(data.facts)) data.facts = [];
+    return data;
   } catch {
-    return { facts: "" };
+    return { facts: [] };
   }
 }
 
@@ -290,22 +353,21 @@ function saveSelfMemory(memory) {
 // ── Loop detection ────────────────────────────────────────────────────────────
 function detectLoop(history) {
   const recentReplies = history
-    .filter((m) => m.role === "assistant")
+    .filter(m => m.role === "assistant")
     .slice(-3)
-    .map((m) => m.content.toLowerCase().trim());
+    .map(m => m.content.toLowerCase().trim());
 
   if (recentReplies.length < 2) return false;
 
-  const last = recentReplies[recentReplies.length - 1];
+  const last     = recentReplies[recentReplies.length - 1];
   const previous = recentReplies.slice(0, -1);
 
-  return previous.some((prev) => {
+  return previous.some(prev => {
     if (prev === last) return true;
-    const lastWords = new Set(last.split(/\s+/));
-    const prevWords = prev.split(/\s+/);
-    const overlap = prevWords.filter((w) => lastWords.has(w)).length;
-    const similarity =
-      overlap / Math.max(prevWords.length, lastWords.size);
+    const lastWords  = new Set(last.split(/\s+/));
+    const prevWords  = prev.split(/\s+/);
+    const overlap    = prevWords.filter(w => lastWords.has(w)).length;
+    const similarity = overlap / Math.max(prevWords.length, lastWords.size);
     return similarity > 0.8;
   });
 }
@@ -324,54 +386,49 @@ function cleanResponse(raw) {
 }
 
 // ── Ollama interface ──────────────────────────────────────────────────────────
-// Non-streaming version used for extraction passes and loop correction
-async function ollamaChat(messages, think = false) {
-  const options = think
-    ? { num_predict: 1024, temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0 }
-    : settings.chatOptions;
+async function ollamaChat(messages) {
+  const body = {
+    model:   settings.model,
+    messages,
+    stream:  false,
+    options: settings.chatOptions,
+  };
+  if (modelSupportsThinking(settings.model)) body.think = false;
 
   const response = await fetch(`${settings.ollamaUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: settings.model,
-      messages,
-      stream: false,
-      think,
-      options,
-    }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(await response.text());
   const data = await response.json();
-  const raw = data.message?.content?.trim() ?? "";
-  return cleanResponse(raw);
+  return cleanResponse(data.message?.content?.trim() ?? "");
 }
 
-// Streaming version for main chat — relays tokens via SSE callbacks
-// Handles both Ollama's separate `thinking` field and inline <think> tags
-async function ollamaChatStream(messages, think, onToken, onThinkToken) {
+async function ollamaChatStream(messages, onToken, onThinkToken) {
+  const wantThink = settings.showThinking && modelSupportsThinking(settings.model);
+  const body = {
+    model:   settings.model,
+    messages,
+    stream:  true,
+    options: settings.chatOptions,
+  };
+  if (modelSupportsThinking(settings.model)) body.think = wantThink;
+
   const response = await fetch(`${settings.ollamaUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: settings.model,
-      messages,
-      stream: true,
-      think,
-      options: settings.chatOptions,
-    }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(await response.text());
 
-  const reader = response.body.getReader();
+  const reader  = response.body.getReader();
   const decoder = new TextDecoder();
 
-  let fullContent = "";
+  let fullContent  = "";
   let fullThinking = "";
-
-  // State machine for parsing inline <think> tags in streamed content
   let inlineBuffer = "";
-  let inThink = false;
+  let inThink      = false;
 
   function feedInline(chunk) {
     inlineBuffer += chunk;
@@ -379,28 +436,24 @@ async function ollamaChatStream(messages, think, onToken, onThinkToken) {
       if (inThink) {
         const closeIdx = inlineBuffer.indexOf("</think>");
         if (closeIdx === -1) {
-          // Emit all but the last 8 chars (partial tag guard)
-          const safe =
-            inlineBuffer.length > 8 ? inlineBuffer.slice(0, -8) : "";
+          const safe = inlineBuffer.length > 8 ? inlineBuffer.slice(0, -8) : "";
           if (safe) {
             fullThinking += safe;
-            onThinkToken?.(safe);
+            if (wantThink) onThinkToken?.(safe);
             inlineBuffer = inlineBuffer.slice(safe.length);
           }
           break;
         } else {
           const thinking = inlineBuffer.slice(0, closeIdx);
-          fullThinking += thinking;
-          onThinkToken?.(thinking);
+          fullThinking  += thinking;
+          if (wantThink) onThinkToken?.(thinking);
           inlineBuffer = inlineBuffer.slice(closeIdx + 8);
           inThink = false;
         }
       } else {
         const openIdx = inlineBuffer.indexOf("<think>");
         if (openIdx === -1) {
-          // Emit all but the last 7 chars (partial tag guard)
-          const safe =
-            inlineBuffer.length > 7 ? inlineBuffer.slice(0, -7) : "";
+          const safe = inlineBuffer.length > 7 ? inlineBuffer.slice(0, -7) : "";
           if (safe) {
             fullContent += safe;
             onToken(safe);
@@ -410,7 +463,7 @@ async function ollamaChatStream(messages, think, onToken, onThinkToken) {
         } else {
           if (openIdx > 0) {
             const content = inlineBuffer.slice(0, openIdx);
-            fullContent += content;
+            fullContent  += content;
             onToken(content);
           }
           inlineBuffer = inlineBuffer.slice(openIdx + 7);
@@ -425,39 +478,34 @@ async function ollamaChatStream(messages, think, onToken, onThinkToken) {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    const text = remainder + decoder.decode(value, { stream: true });
+    const text  = remainder + decoder.decode(value, { stream: true });
     const lines = text.split("\n");
-    remainder = lines.pop() ?? "";
+    remainder   = lines.pop() ?? "";
 
     for (const line of lines) {
       if (!line.trim()) continue;
       try {
         const data = JSON.parse(line);
-        // Newer Ollama sends thinking in a separate field
         if (data.message?.thinking) {
           fullThinking += data.message.thinking;
-          onThinkToken?.(data.message.thinking);
+          if (wantThink) onThinkToken?.(data.message.thinking);
         }
-        if (data.message?.content) {
-          feedInline(data.message.content);
-        }
+        if (data.message?.content) feedInline(data.message.content);
       } catch {}
     }
   }
 
-  // Flush remainder
   if (remainder.trim()) {
     try {
       const data = JSON.parse(remainder);
       if (data.message?.thinking) {
         fullThinking += data.message.thinking;
-        onThinkToken?.(data.message.thinking);
+        if (wantThink) onThinkToken?.(data.message.thinking);
       }
       if (data.message?.content) feedInline(data.message.content);
     } catch {}
   }
 
-  // Flush inline buffer
   if (inlineBuffer) {
     if (inThink) {
       fullThinking += inlineBuffer;
@@ -467,28 +515,27 @@ async function ollamaChatStream(messages, think, onToken, onThinkToken) {
     }
   }
 
-  // Apply non-Latin cleanup to assembled content
-  const cleaned = cleanResponse(fullContent);
-  return { content: cleaned, thinking: fullThinking };
+  return { content: cleanResponse(fullContent), thinking: fullThinking };
 }
 
 // ── Extraction helpers ────────────────────────────────────────────────────────
 async function extractUserFacts(username, userMessage, botReply, existingFacts) {
+  const existingText = existingFacts?.length
+    ? existingFacts.map(f => `${f.text} [${f.weight}]`).join("\n")
+    : "none";
+
   const messages = [
     { role: "system", content: USER_EXTRACT_PROMPT },
     {
       role: "user",
-      content: `Existing facts about ${username}:\n${
-        existingFacts || "none"
-      }\n\nLatest exchange:\n${username}: ${userMessage}\nMaki: ${botReply}\n\nWhat new facts should be added?`,
+      content: `Existing facts about ${username}:\n${existingText}\n\nLatest exchange:\n${username}: ${userMessage}\nMaki: ${botReply}\n\nWhat new facts should be added?`,
     },
   ];
   try {
-    const result = await ollamaChat(messages, true);
-    if (!result || result === "NO_UPDATE")
-      return { facts: existingFacts, newFacts: false };
-    const merged = existingFacts ? `${existingFacts}\n${result}` : result;
-    return { facts: merged, newFacts: true };
+    const result = await ollamaChat(messages);
+    if (!result || result === "NO_UPDATE") return { facts: existingFacts, newFacts: false };
+    const newFacts = parseExtractedLines(result);
+    return { facts: [...(existingFacts || []), ...newFacts], newFacts: true };
   } catch (err) {
     console.error("User memory extraction failed:", err.message);
     return { facts: existingFacts, newFacts: false };
@@ -496,26 +543,29 @@ async function extractUserFacts(username, userMessage, botReply, existingFacts) 
 }
 
 async function extractSelfFacts(username, userMessage, botReply, existingFacts) {
+  const existingText = existingFacts?.length
+    ? existingFacts.map(f => `${f.text} [${f.weight}]`).join("\n")
+    : "none";
+
   const messages = [
     { role: "system", content: SELF_EXTRACT_PROMPT },
     {
       role: "user",
-      content: `What Maki already knows about herself:\n${
-        existingFacts || "none"
-      }\n\nLatest exchange:\n${username}: ${userMessage}\nMaki: ${botReply}\n\nWhat new facts about Maki should be added?`,
+      content: `What Maki already knows about herself:\n${existingText}\n\nLatest exchange:\n${username}: ${userMessage}\nMaki: ${botReply}\n\nWhat new facts about Maki should be added?`,
     },
   ];
   try {
-    const result = await ollamaChat(messages, true);
+    const result = await ollamaChat(messages);
     if (!result || result === "NO_UPDATE") return existingFacts;
-    return existingFacts ? `${existingFacts}\n${result}` : result;
+    const newFacts = parseExtractedLines(result);
+    return [...(existingFacts || []), ...newFacts];
   } catch (err) {
     console.error("Self memory extraction failed:", err.message);
     return existingFacts;
   }
 }
 
-// ── API: Chat (streaming SSE over POST) ───────────────────────────────────────
+// ── API: Chat ─────────────────────────────────────────────────────────────────
 app.post("/api/chat", async (req, res) => {
   const { username, message } = req.body;
   if (!username?.trim() || !message?.trim())
@@ -523,30 +573,32 @@ app.post("/api/chat", async (req, res) => {
 
   const userId = sanitizeUserId(username);
   const memory = loadUserMemory(userId);
-  const self = loadSelfMemory();
+  const self   = loadSelfMemory();
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  const send = (obj) => {
-    res.write(`data: ${JSON.stringify(obj)}\n\n`);
-  };
+  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
   while (memory.history.length > settings.maxHistory) memory.history.shift();
 
-  const familiarityLabel = getFamiliarityLabel(memory.familiarity);
+  const familiarityLabel             = getFamiliarityLabel(memory.familiarity);
   const { timeOfDay, sinceLastSeen } = getTimeContext(memory.lastSeen);
 
   let systemContent = SYSTEM_PROMPT;
   systemContent += `\n\nYour relationship with ${username}: ${familiarityLabel}`;
   systemContent += `\n\nTime context: It is currently ${timeOfDay}. ${sinceLastSeen} Let this subtly color your mood and energy -- do not reference it directly or announce it.`;
-  if (self.facts) {
-    systemContent += `\n\nBackground self-knowledge -- this is who you are, not a list of things to announce. Let it shape what you gravitate toward, what you react to, and what you avoid. Do not quote these facts back directly:\n${self.facts}`;
+
+  const selfStr = factsToString(self.facts);
+  if (selfStr) {
+    systemContent += `\n\nBackground self-knowledge -- this is who you are, not a list of things to announce. Let it shape what you gravitate toward, what you react to, and what you avoid. Do not quote these facts back directly:\n${selfStr}`;
   }
-  if (memory.facts) {
-    systemContent += `\n\nWhat you remember about ${username}:\n${memory.facts}`;
+
+  const userStr = factsToString(memory.facts);
+  if (userStr) {
+    systemContent += `\n\nWhat you remember about ${username}:\n${userStr}`;
   }
 
   memory.history.push({ role: "user", content: `${username}: ${message}` });
@@ -555,9 +607,8 @@ app.post("/api/chat", async (req, res) => {
   const startTime = Date.now();
 
   try {
-    const { content, thinking } = await ollamaChatStream(
+    const { content } = await ollamaChatStream(
       messages,
-      settings.showThinking,
       (token) => send({ type: "token", content: token }),
       (token) => send({ type: "think", content: token })
     );
@@ -565,22 +616,14 @@ app.post("/api/chat", async (req, res) => {
     let reply = content;
 
     if (!reply) {
-      send({
-        type: "done",
-        reply: "...",
-        responseTime: Date.now() - startTime,
-        loopDetected: false,
-        loopCorrected: false,
-        familiarity: memory.familiarity,
-        historyCount: memory.history.length,
-      });
+      send({ type: "done", reply: "...", responseTime: Date.now() - startTime, loopDetected: false, loopCorrected: false, familiarity: memory.familiarity, historyCount: memory.history.length });
       res.end();
       return;
     }
 
     memory.history.push({ role: "assistant", content: reply });
 
-    let loopDetected = false;
+    let loopDetected  = false;
     let loopCorrected = false;
 
     if (detectLoop(memory.history)) {
@@ -589,18 +632,15 @@ app.post("/api/chat", async (req, res) => {
       send({ type: "loop_detected" });
       console.log(`[Loop detected] Attempting self-correction for ${username}`);
       try {
-        const corrected = await ollamaChat(
-          [
-            ...messages,
-            {
-              role: "user",
-              content: `[System note: Your last reply was too similar to something you already said recently. The repeated reply was: "${reply}". Please respond differently. Do not repeat that reply or anything close to it. Pick up the conversation naturally from where it is now.]`,
-            },
-          ],
-          false
-        );
+        const corrected = await ollamaChat([
+          ...messages,
+          {
+            role: "user",
+            content: `[System note: Your last reply was too similar to something you already said recently. The repeated reply was: "${reply}". Please respond differently. Do not repeat that reply or anything close to it. Pick up the conversation naturally from where it is now.]`,
+          },
+        ]);
         if (corrected) {
-          reply = corrected;
+          reply         = corrected;
           loopCorrected = true;
           send({ type: "correction", content: reply });
           console.log(`[Loop corrected] New reply generated`);
@@ -611,14 +651,11 @@ app.post("/api/chat", async (req, res) => {
       memory.history.push({ role: "assistant", content: reply });
     }
 
-    const responseTime = Date.now() - startTime;
-
-    // Background extraction — does not block reply delivery
     Promise.all([
       extractUserFacts(username, message, reply, memory.facts),
       extractSelfFacts(username, message, reply, self.facts),
     ]).then(([userResult, updatedSelfFacts]) => {
-      memory.facts = userResult.facts;
+      memory.facts        = userResult.facts;
       memory.familiarity += BASE_POINTS;
       if (userResult.newFacts) memory.familiarity += PERSONAL_BONUS;
       saveUserMemory(userId, memory, username);
@@ -626,15 +663,7 @@ app.post("/api/chat", async (req, res) => {
       saveSelfMemory(self);
     });
 
-    send({
-      type: "done",
-      reply,
-      responseTime,
-      loopDetected,
-      loopCorrected,
-      familiarity: memory.familiarity,
-      historyCount: memory.history.length,
-    });
+    send({ type: "done", reply, responseTime: Date.now() - startTime, loopDetected, loopCorrected, familiarity: memory.familiarity, historyCount: memory.history.length });
     res.end();
   } catch (err) {
     console.error("Chat error:", err.message);
@@ -648,17 +677,12 @@ app.get("/api/users", (req, res) => {
   try {
     const excluded = new Set(["maki.json", "_settings.json"]);
     const users = readdirSync(MEMORY_DIR)
-      .filter((f) => f.endsWith(".json") && !excluded.has(f))
-      .map((f) => {
+      .filter(f => f.endsWith(".json") && !excluded.has(f))
+      .map(f => {
         const userId = f.slice(0, -5);
         try {
           const data = JSON.parse(readFileSync(join(MEMORY_DIR, f), "utf8"));
-          return {
-            userId,
-            displayName: data.displayName || userId,
-            familiarity: data.familiarity ?? 0,
-            lastSeen: data.lastSeen ?? null,
-          };
+          return { userId, displayName: data.displayName || userId, familiarity: data.familiarity ?? 0, lastSeen: data.lastSeen ?? null };
         } catch {
           return { userId, displayName: userId, familiarity: 0, lastSeen: null };
         }
@@ -676,7 +700,7 @@ app.get("/api/models", async (req, res) => {
     const response = await fetch(`${settings.ollamaUrl}/api/tags`);
     if (!response.ok) throw new Error("Ollama unreachable");
     const data = await response.json();
-    res.json((data.models ?? []).map((m) => m.name));
+    res.json((data.models ?? []).map(m => m.name));
   } catch (err) {
     res.status(503).json({ error: err.message });
   }
@@ -694,23 +718,26 @@ app.post("/api/settings", (req, res) => {
 });
 
 // ── API: Memory ───────────────────────────────────────────────────────────────
-app.get("/api/memory/maki", (req, res) => res.json(loadSelfMemory()));
+app.get("/api/memory/maki", (req, res) => {
+  const m = loadSelfMemory();
+  res.json({ facts: factsToDisplay(m.facts) });
+});
 
 app.get("/api/memory/:userId", (req, res) => {
   const userId = sanitizeUserId(req.params.userId);
-  const m = loadUserMemory(userId);
+  const m      = loadUserMemory(userId);
   res.json({
-    facts: m.facts,
-    familiarity: m.familiarity,
+    facts:        factsToDisplay(m.facts),
+    familiarity:  m.familiarity,
     historyCount: m.history.length,
-    lastSeen: m.lastSeen,
+    lastSeen:     m.lastSeen,
   });
 });
 
 app.delete("/api/memory/:userId/history", (req, res) => {
   const userId = sanitizeUserId(req.params.userId);
-  const m = loadUserMemory(userId);
-  m.history = [];
+  const m      = loadUserMemory(userId);
+  m.history    = [];
   saveUserMemory(userId, m);
   res.json({ ok: true, message: "Conversation history cleared." });
 });
@@ -719,16 +746,14 @@ app.delete("/api/memory/:userId", (req, res) => {
   const userId = sanitizeUserId(req.params.userId);
   writeFileSync(
     join(MEMORY_DIR, `${userId}.json`),
-    JSON.stringify({ facts: "", history: [], familiarity: 0, lastSeen: null }, null, 2)
+    JSON.stringify({ facts: [], history: [], familiarity: 0, lastSeen: null }, null, 2)
   );
   res.json({ ok: true, message: "User memory cleared." });
 });
 
 // ── API: Presence notes ───────────────────────────────────────────────────────
-// Appends a leave or return marker to conversation history so Maki has context
-// about when someone left and came back.
 app.post("/api/memory/:userId/note", (req, res) => {
-  const userId = sanitizeUserId(req.params.userId);
+  const userId             = sanitizeUserId(req.params.userId);
   const { type, username } = req.body;
   if (!type || !username) return res.status(400).json({ error: "type and username required" });
 
@@ -736,15 +761,8 @@ app.post("/api/memory/:userId/note", (req, res) => {
   if (!memory.history.length) return res.json({ ok: true, skipped: true });
 
   if (type === "leave") {
-    const now = new Date();
-    const formatted = now.toLocaleString("en-US", {
-      weekday: "long", month: "long", day: "numeric",
-      hour: "numeric", minute: "2-digit", hour12: true,
-    });
-    memory.history.push({
-      role: "user",
-      content: `[${username} left — ${formatted}]`,
-    });
+    const formatted = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+    memory.history.push({ role: "user", content: `[${username} left — ${formatted}]` });
     saveUserMemory(userId, memory, username);
     return res.json({ ok: true });
   }
@@ -753,21 +771,18 @@ app.post("/api/memory/:userId/note", (req, res) => {
     const lastSeen = memory.lastSeen ? new Date(memory.lastSeen) : null;
     if (!lastSeen) return res.json({ ok: true, skipped: true });
 
-    const diffMs = Date.now() - lastSeen.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
+    const diffMs    = Date.now() - lastSeen.getTime();
+    const diffMins  = Math.floor(diffMs / 60000);
     if (diffMins < 1) return res.json({ ok: true, skipped: true });
 
     const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-    const duration =
-      diffDays >= 1   ? `${diffDays} day${diffDays !== 1 ? "s" : ""}`
-      : diffHours >= 1 ? `${diffHours} hour${diffHours !== 1 ? "s" : ""}`
-      :                  `${diffMins} minute${diffMins !== 1 ? "s" : ""}`;
+    const diffDays  = Math.floor(diffHours / 24);
+    const duration  =
+      diffDays  >= 1 ? `${diffDays} day${diffDays !== 1 ? "s" : ""}` :
+      diffHours >= 1 ? `${diffHours} hour${diffHours !== 1 ? "s" : ""}` :
+                       `${diffMins} minute${diffMins !== 1 ? "s" : ""}`;
 
-    memory.history.push({
-      role: "user",
-      content: `[${username} came back — ${duration} later]`,
-    });
+    memory.history.push({ role: "user", content: `[${username} came back — ${duration} later]` });
     saveUserMemory(userId, memory, username);
     return res.json({ ok: true, duration });
   }
@@ -780,4 +795,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`MakiLocal running at http://localhost:${PORT}`);
   console.log(`Model: ${settings.model} | Ollama: ${settings.ollamaUrl}`);
+  console.log(`Thinking mode: ${modelSupportsThinking(settings.model) ? "supported" : "not supported (omitted)"}`);
 });

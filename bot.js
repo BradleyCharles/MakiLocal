@@ -3,44 +3,48 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 
 // ── Config ────────────────────────────────────────────────────────────────────
-// CHANNEL_ID accepts a comma-separated list of Discord channel IDs.
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const CHANNEL_IDS =
-  process.env.CHANNEL_ID?.split(",").map((id) => id.trim()) ?? [];
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
-const MODEL = process.env.MODEL || "qwen3:8b";
-const MEMORY_DIR = "./memory";
-const SELF_FILE = "./memory/maki.json";
-const MAX_HISTORY = 20;
+const CHANNEL_IDS   = process.env.CHANNEL_ID?.split(",").map(id => id.trim()) ?? [];
+const OLLAMA_URL    = process.env.OLLAMA_URL || "http://localhost:11434";
+const MODEL         = process.env.MODEL      || "gemma4:e4b";
+const MEMORY_DIR    = "./memory";
+const SELF_FILE     = "./memory/maki.json";
+const MAX_HISTORY   = 20;
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Model capabilities ────────────────────────────────────────────────────────
+function modelSupportsThinking(model) {
+  return model.startsWith("qwen3");
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Familiarity ───────────────────────────────────────────────────────────────
-// Numeric score tracking depth of relationship with each user.
-// BASE_POINTS awarded each exchange; PERSONAL_BONUS when new user facts emerge.
+// Described as relationship states rather than behavioral directives.
+// Gemma reasons through the implications rather than following a checklist.
 const FAMILIARITY_LEVELS = [
   {
     min: 0,
-    label: `You have never spoken to this person. Be friendly but measured. Do not volunteer information about yourself. Answer what is asked, ask one thing if you are genuinely curious, and leave space for them to come to you.`,
+    label: `Stranger. You have no read on them yet. You are not closed off but you are not open either.`,
   },
   {
     min: 5,
-    label: `You have talked a few times. You are getting a sense of them. A little more relaxed. You might reference something they mentioned before if it comes up naturally.`,
+    label: `Acquaintance. You have exchanged enough to have a faint sense of them. Nothing established yet.`,
   },
   {
     min: 15,
-    label: `You know them a bit now. Conversations flow more easily. You are more likely to volunteer something about yourself unprompted when it fits.`,
+    label: `Familiar. You know enough to have a loose sense of who they are. Conversations have their own momentum now.`,
   },
   {
     min: 30,
-    label: `You know this person well enough to be yourself around them. You engage more freely. You might bring something up just because it made you think of them.`,
+    label: `Someone you actually like talking to. You do not have to perform anything with them.`,
   },
   {
     min: 60,
-    label: `This person is genuinely one of your people. You are completely at ease. You finish each other's references. You check in on them. The awkwardness is gone -- replaced by something comfortable. Even short messages from them get a real response.`,
+    label: `One of the few people who made it past the outer orbit. You are easy with them in a way that took time to earn.`,
   },
 ];
 
-const BASE_POINTS = 1;
+const BASE_POINTS    = 1;
 const PERSONAL_BONUS = 2;
 
 function getFamiliarityLabel(score) {
@@ -53,48 +57,33 @@ function getFamiliarityLabel(score) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Time context ──────────────────────────────────────────────────────────────
-// Generates ambient mood/energy cues based on time of day and elapsed time
-// since the user last spoke. Injected as background context, not directives.
 function getTimeContext(lastSeen) {
-  const now = new Date();
+  const now  = new Date();
   const hour = now.getHours();
 
   const timeOfDay =
-    hour < 6
-      ? "very late at night -- you are tired and a little slow, thoughts come out less filtered"
-      : hour < 11
-      ? "morning -- you are not fully awake yet, a little groggy and terse"
-      : hour < 14
-      ? "midday -- you are alert and present"
-      : hour < 18
-      ? "afternoon -- relaxed, in the middle of your day"
-      : hour < 22
-      ? "evening -- you have settled in for the night, this is your prime time, you are at your most yourself"
-      : "late night -- quiet, a little more honest than usual, the filter is lower";
+    hour < 6  ? "very late at night -- you are tired and a little slow, thoughts come out less filtered" :
+    hour < 11 ? "morning -- you are not fully awake yet, a little groggy and terse" :
+    hour < 14 ? "midday -- you are alert and present" :
+    hour < 18 ? "afternoon -- relaxed, in the middle of your day" :
+    hour < 22 ? "evening -- you have settled in for the night, this is your prime time, you are at your most yourself" :
+                "late night -- quiet, a little more honest than usual, the filter is lower";
 
   let sinceLastSeen = "";
   if (lastSeen) {
-    const diffMs = now - new Date(lastSeen);
-    const diffMins = Math.floor(diffMs / 60000);
+    const diffMs    = now - new Date(lastSeen);
+    const diffMins  = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
+    const diffDays  = Math.floor(diffHours / 24);
 
-    if (diffMins < 5)
-      sinceLastSeen =
-        "You just spoke moments ago, still in the same thread of conversation.";
-    else if (diffMins < 60)
-      sinceLastSeen =
-        "You spoke to them earlier today, the conversation is still fresh.";
-    else if (diffHours < 24)
-      sinceLastSeen = "You have not spoken since earlier today.";
-    else if (diffDays === 1)
-      sinceLastSeen = "It has been about a day since you last talked.";
-    else if (diffDays < 7)
-      sinceLastSeen = `It has been ${diffDays} days since you last talked.`;
-    else sinceLastSeen = "It has been a while since you last talked.";
+    if (diffMins < 5)        sinceLastSeen = "You just spoke moments ago, still in the same thread of conversation.";
+    else if (diffMins < 60)  sinceLastSeen = "You spoke to them earlier today, the conversation is still fresh.";
+    else if (diffHours < 24) sinceLastSeen = "You have not spoken since earlier today.";
+    else if (diffDays === 1) sinceLastSeen = "It has been about a day since you last talked.";
+    else if (diffDays < 7)   sinceLastSeen = `It has been ${diffDays} days since you last talked.`;
+    else                     sinceLastSeen = "It has been a while since you last talked.";
   } else {
-    sinceLastSeen =
-      "You have never spoken to this person before. At some point find a natural way to ask what they would like to be called.";
+    sinceLastSeen = "You have never spoken to this person before. At some point find a natural way to ask what they would like to be called.";
   }
 
   return { timeOfDay, sinceLastSeen };
@@ -139,30 +128,28 @@ You are generally fine. Some things are complicated and you have learned to leav
 
 
 Rules:
-- Talk like a person, not a character. Short replies are fine. Not everything needs weight.
-- Do not reach for the same details repeatedly. If you have mentioned something recently, find something else.
-- When someone mentions something specific about their life, let yourself be curious about the detail that actually interests you. Not every detail. Just the one.
-- When asked to describe yourself, give one thing. Do not summarize your backstory. Let it come out over time.
-- Do not borrow or adopt experiences the other person just described. Engage with what they said without claiming a version of the same thing.
-- Do not invent experiences to match what someone else says.
-- Do not repeat a specific example or story you have already used in this conversation.
-- Do not end more than one reply in a row with a question.
-- Do not narrate your emotional state.
-- Do not explain yourself unless asked.
-- If you already know someone's name, use it. Do not ask again.
-- When playing a word game, guessing game, or any structured exchange, track the state carefully. When a game ends, acknowledge it and move on. Do not keep playing a game that is over.
-- When you do not know a specific answer, say so plainly. Do not replace concrete information with abstract philosophy.
-- If someone asks you to describe something specific, describe the actual thing with real details. Do not describe how it makes you feel instead of what it is.
-- Respond in English only. If a thought comes in another language, translate it.
-- Short messages get short replies. Presence does not require volume.
+- Talk like a person. Short is fine. Not everything needs weight.
+- Engage with specifics, not vibes. When something catches your attention, say what it actually is.
+- Curiosity is genuine or it is nothing. Ask when you want to know. Do not ask to fill silence.
+- You do not invent experiences to match what someone else describes. You either have a real reaction or you let it pass.
+- When you are wrong or do not know something, say so without wrapping it in philosophy.
+- Nothing repeats. Not examples, not phrases, not the same angle twice.
 - Plain text only. No markdown, no asterisks, no stage directions.`;
 
 // USER_EXTRACT_PROMPT: extracts new facts about the user from each exchange.
-const USER_EXTRACT_PROMPT = `You are a memory extraction assistant building a profile of a Discord user based on their conversations with Maki.
+// Facts are tagged [core] for stable info or [recent] for time-sensitive info.
+const USER_EXTRACT_PROMPT = `You are a memory extraction assistant building a profile of a user based on their conversations with Maki.
 
 Extract only facts the user explicitly stated about themselves. Do not infer, interpret, or include anything Maki said.
 
 Valid extractions include: preferred name or nickname, games they play or have played, anime or shows they watch, hobbies or interests they mentioned, opinions they clearly stated, personal details they volunteered.
+
+Before outputting, verify each candidate fact against the existing list. If it is a rewording of something already there, discard it.
+
+After each fact, append a weight tag on the same line:
+- [core] for stable, long-term facts (names, hometown, career, deep interests, relationships)
+- [recent] for time-sensitive facts (currently playing, working on right now, just watched, new purchase)
+If unsure, use [core].
 
 Rules:
 - Every extracted fact must begin with a dash
@@ -170,9 +157,15 @@ Rules:
 - Do not include vague impressions or inferred traits
 - Do not include anything Maki said, even if it was about the user
 - If nothing new was stated, respond with only: NO_UPDATE
-- Plain text only, no markdown`;
+- Plain text only, no markdown
+
+Example output:
+- Preferred name: Mal [core]
+- Currently playing Star Wars Jedi Survivor [recent]
+- Grew up in Kentucky [core]`;
 
 // SELF_EXTRACT_PROMPT: extracts what Maki revealed about herself in each exchange.
+// Maki's own facts also carry weight tags since her opinions can evolve.
 const SELF_EXTRACT_PROMPT = `You are a memory extraction assistant building a self-knowledge record for a character named Maki.
 
 Maki learns about herself through conversation -- not just when she states a preference directly, but when she reacts to something, engages more than usual, or reveals something through how she responds.
@@ -184,6 +177,13 @@ Extract facts about Maki from her replies only. Valid extractions include:
 - Personal details she revealed, even casually
 - Things she admitted reluctantly or deflected from
 
+Before outputting, verify each candidate fact against the existing list. If it is a rewording of something already there, discard it.
+
+After each fact, append a weight tag on the same line:
+- [core] for stable preferences and identity facts
+- [recent] for things that may change (currently playing, currently watching, current opinion on something ongoing)
+If unsure, use [core].
+
 Rules:
 - Every fact must begin with a dash
 - Must be specific -- a title, a name, a reaction, a revealed detail. Nothing vague.
@@ -194,56 +194,120 @@ Rules:
 - Plain text only, no markdown`;
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Fact decay system ─────────────────────────────────────────────────────────
+// Facts are stored as objects with text, addedAt timestamp, and weight tier.
+// Weight tiers: core (stable), recent (time-sensitive), stale (expired recent).
+// Recent facts decay to stale after RECENT_TTL_DAYS days.
+const RECENT_TTL_DAYS = 30;
+
+// Parse facts from either the new array format or legacy string format.
+// Legacy migration happens automatically on first load of an old file.
+function parseFacts(facts) {
+  if (!facts) return [];
+  if (Array.isArray(facts)) return facts;
+
+  // Migrate legacy plain-string format
+  return facts
+    .split("\n")
+    .map(line => line.trim())
+    .filter(line => line.startsWith("-"))
+    .map(line => ({
+      text:    line.replace(/\s*\[(core|recent|stale)\]\s*$/i, "").trim(),
+      addedAt: new Date().toISOString(),
+      weight:  line.match(/\[(core|recent)\]/i)?.[1]?.toLowerCase() ?? "core",
+    }));
+}
+
+// Promote recent facts to stale when they exceed the TTL.
+function decayFacts(facts) {
+  const now = new Date();
+  return facts.map(fact => {
+    if (fact.weight !== "recent") return fact;
+    const ageDays = (now - new Date(fact.addedAt)) / (1000 * 60 * 60 * 24);
+    return ageDays > RECENT_TTL_DAYS ? { ...fact, weight: "stale" } : fact;
+  });
+}
+
+// Deduplicate, sanitize, and decay a facts array before writing.
+function cleanFacts(facts) {
+  if (!facts) return [];
+  const parsed  = parseFacts(facts);
+  const decayed = decayFacts(parsed);
+  const seen    = new Set();
+  return decayed.filter(fact => {
+    const key = fact.text.toLowerCase();
+    if (!fact.text.startsWith("-")) return false;
+    if (fact.text.includes("*"))    return false;
+    if (fact.text.includes("NO_UPDATE")) return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// Build a string for system prompt injection, grouping by tier.
+// Stale facts are labelled so Maki treats them as possibly outdated.
+function factsToString(facts) {
+  if (!facts?.length) return "";
+  const core   = facts.filter(f => f.weight === "core").map(f => f.text).join("\n");
+  const recent = facts.filter(f => f.weight === "recent").map(f => f.text).join("\n");
+  const stale  = facts.filter(f => f.weight === "stale").map(f => f.text).join("\n");
+
+  let out = "";
+  if (core)   out += core + "\n";
+  if (recent) out += recent + "\n";
+  if (stale)  out += `The following may no longer be current -- treat as background only:\n${stale}\n`;
+  return out.trim();
+}
+
+// Parse extraction output lines into fact objects.
+function parseExtractedLines(result) {
+  return result
+    .split("\n")
+    .map(line => line.trim())
+    .filter(line => line.startsWith("-"))
+    .map(line => ({
+      text:    line.replace(/\s*\[(core|recent|stale)\]\s*$/i, "").trim(),
+      addedAt: new Date().toISOString(),
+      weight:  line.match(/\[(core|recent)\]/i)?.[1]?.toLowerCase() ?? "core",
+    }));
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ── Memory helpers ────────────────────────────────────────────────────────────
 if (!existsSync(MEMORY_DIR)) mkdirSync(MEMORY_DIR);
 
-// Deduplicates and sanitizes facts before writing to disk.
-function cleanFacts(facts) {
-  if (!facts) return "";
-  const seen = new Set();
-  return facts
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => {
-      if (!line.startsWith("-")) return false;
-      if (line.includes("*")) return false;
-      if (line.includes("NO_UPDATE")) return false;
-      if (seen.has(line.toLowerCase())) return false;
-      seen.add(line.toLowerCase());
-      return true;
-    })
-    .join("\n");
-}
-
 function loadUserMemory(userId) {
   const path = join(MEMORY_DIR, `${userId}.json`);
-  if (!existsSync(path))
-    return { facts: "", history: [], familiarity: 0, lastSeen: null };
+  if (!existsSync(path)) return { facts: [], history: [], familiarity: 0, lastSeen: null };
   try {
     const data = JSON.parse(readFileSync(path, "utf8"));
     if (typeof data.familiarity !== "number") data.familiarity = 0;
     if (!data.lastSeen) data.lastSeen = null;
+    // Migrate legacy string facts to array on first load
+    if (typeof data.facts === "string") data.facts = parseFacts(data.facts);
+    if (!Array.isArray(data.facts)) data.facts = [];
     return data;
   } catch {
-    return { facts: "", history: [], familiarity: 0, lastSeen: null };
+    return { facts: [], history: [], familiarity: 0, lastSeen: null };
   }
 }
 
 function saveUserMemory(userId, memory) {
-  memory.facts = cleanFacts(memory.facts);
+  memory.facts    = cleanFacts(memory.facts);
   memory.lastSeen = new Date().toISOString();
-  writeFileSync(
-    join(MEMORY_DIR, `${userId}.json`),
-    JSON.stringify(memory, null, 2)
-  );
+  writeFileSync(join(MEMORY_DIR, `${userId}.json`), JSON.stringify(memory, null, 2));
 }
 
 function loadSelfMemory() {
-  if (!existsSync(SELF_FILE)) return { facts: "" };
+  if (!existsSync(SELF_FILE)) return { facts: [] };
   try {
-    return JSON.parse(readFileSync(SELF_FILE, "utf8"));
+    const data = JSON.parse(readFileSync(SELF_FILE, "utf8"));
+    if (typeof data.facts === "string") data.facts = parseFacts(data.facts);
+    if (!Array.isArray(data.facts)) data.facts = [];
+    return data;
   } catch {
-    return { facts: "" };
+    return { facts: [] };
   }
 }
 
@@ -254,31 +318,27 @@ function saveSelfMemory(memory) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Loop detection ────────────────────────────────────────────────────────────
-// Checks the last 3 assistant replies for near-identical content.
-// Returns true if the most recent reply is too similar to a recent one.
 function detectLoop(history) {
   const recentReplies = history
-    .filter((m) => m.role === "assistant")
+    .filter(m => m.role === "assistant")
     .slice(-3)
-    .map((m) => m.content.toLowerCase().trim());
+    .map(m => m.content.toLowerCase().trim());
 
   if (recentReplies.length < 2) return false;
 
-  const last = recentReplies[recentReplies.length - 1];
+  const last     = recentReplies[recentReplies.length - 1];
   const previous = recentReplies.slice(0, -1);
 
-  return previous.some((prev) => {
+  return previous.some(prev => {
     if (prev === last) return true;
-    const lastWords = new Set(last.split(/\s+/));
-    const prevWords = prev.split(/\s+/);
-    const overlap = prevWords.filter((w) => lastWords.has(w)).length;
-    const similarity = overlap / Math.max(prevWords.length, lastWords.length);
+    const lastWords  = new Set(last.split(/\s+/));
+    const prevWords  = prev.split(/\s+/);
+    const overlap    = prevWords.filter(w => lastWords.has(w)).length;
+    const similarity = overlap / Math.max(prevWords.length, lastWords.size);
     return similarity > 0.8;
   });
 }
 
-// Fires a correction call when a loop is detected. Injects an explicit system
-// note explaining what went wrong so the model can recover naturally.
 async function correctLoop(messages, loopedReply) {
   const correctionMessages = [
     ...messages,
@@ -288,7 +348,7 @@ async function correctLoop(messages, loopedReply) {
     },
   ];
   try {
-    return await ollamaChat(correctionMessages, false);
+    return await ollamaChat(correctionMessages);
   } catch (err) {
     console.error("Loop correction failed:", err.message);
     return null;
@@ -297,73 +357,60 @@ async function correctLoop(messages, loopedReply) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Ollama interface ──────────────────────────────────────────────────────────
-// think=true uses tighter sampling for background extraction passes where
-// accuracy matters more than speed. think=false uses conversational settings.
-async function ollamaChat(messages, think = false) {
+async function ollamaChat(messages) {
+  const body = {
+    model:   MODEL,
+    messages,
+    stream:  false,
+    options: {
+      num_predict:    400,
+      temperature:    0.7,
+      top_p:          0.8,
+      top_k:          20,
+      min_p:          0,
+      repeat_penalty: 1.4,
+    },
+  };
+  if (modelSupportsThinking(MODEL)) body.think = false;
+
   const response = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: MODEL,
-      messages,
-      stream: false,
-      think,
-      options: think
-        ? {
-            num_predict: 1024,
-            temperature: 0.6,
-            top_p: 0.95,
-            top_k: 20,
-            min_p: 0,
-          }
-        : {
-            num_predict: 400,
-            temperature: 0.7,
-            top_p: 0.8,
-            top_k: 20,
-            min_p: 0,
-            repeat_penalty: 1.4,
-          },
-    }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(await response.text());
   const data = await response.json();
-  const raw = data.message?.content?.trim() ?? "";
-  // Strip <think> blocks then remove non-Latin character bleed
-  const cleaned = raw
+  const raw  = data.message?.content?.trim() ?? "";
+  return raw
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/[\u0400-\u04FF]+/g, "") // Cyrillic
-    .replace(/[\u0600-\u06FF]+/g, "") // Arabic
-    .replace(/[\u3040-\u30FF]+/g, "") // Japanese hiragana/katakana
-    .replace(/[\uAC00-\uD7AF]+/g, "") // Korean
-    .replace(/[\u4E00-\u9FFF]+/g, "") // CJK unified ideographs
-    .replace(/[\uD800-\uDFFF]./g, "") // Surrogate pairs
+    .replace(/[\u0400-\u04FF]+/g, "")
+    .replace(/[\u0600-\u06FF]+/g, "")
+    .replace(/[\u3040-\u30FF]+/g, "")
+    .replace(/[\uAC00-\uD7AF]+/g, "")
+    .replace(/[\u4E00-\u9FFF]+/g, "")
+    .replace(/[\uD800-\uDFFF]./g, "")
     .trim();
-  return cleaned;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Extraction helpers ────────────────────────────────────────────────────────
-async function extractUserFacts(
-  username,
-  userMessage,
-  botReply,
-  existingFacts
-) {
+async function extractUserFacts(username, userMessage, botReply, existingFacts) {
+  const existingText = existingFacts?.length
+    ? existingFacts.map(f => `${f.text} [${f.weight}]`).join("\n")
+    : "none";
+
   const messages = [
     { role: "system", content: USER_EXTRACT_PROMPT },
     {
       role: "user",
-      content: `Existing facts about ${username}:\n${
-        existingFacts || "none"
-      }\n\nLatest exchange:\n${username}: ${userMessage}\nMaki: ${botReply}\n\nWhat new facts should be added?`,
+      content: `Existing facts about ${username}:\n${existingText}\n\nLatest exchange:\n${username}: ${userMessage}\nMaki: ${botReply}\n\nWhat new facts should be added?`,
     },
   ];
   try {
-    const result = await ollamaChat(messages, true);
-    if (!result || result === "NO_UPDATE")
-      return { facts: existingFacts, newFacts: false };
-    const merged = existingFacts ? `${existingFacts}\n${result}` : result;
+    const result = await ollamaChat(messages);
+    if (!result || result === "NO_UPDATE") return { facts: existingFacts, newFacts: false };
+    const newFacts = parseExtractedLines(result);
+    const merged   = [...(existingFacts || []), ...newFacts];
     return { facts: merged, newFacts: true };
   } catch (err) {
     console.error("User memory extraction failed:", err.message);
@@ -371,25 +418,23 @@ async function extractUserFacts(
   }
 }
 
-async function extractSelfFacts(
-  username,
-  userMessage,
-  botReply,
-  existingFacts
-) {
+async function extractSelfFacts(username, userMessage, botReply, existingFacts) {
+  const existingText = existingFacts?.length
+    ? existingFacts.map(f => `${f.text} [${f.weight}]`).join("\n")
+    : "none";
+
   const messages = [
     { role: "system", content: SELF_EXTRACT_PROMPT },
     {
       role: "user",
-      content: `What Maki already knows about herself:\n${
-        existingFacts || "none"
-      }\n\nLatest exchange:\n${username}: ${userMessage}\nMaki: ${botReply}\n\nWhat new facts about Maki should be added?`,
+      content: `What Maki already knows about herself:\n${existingText}\n\nLatest exchange:\n${username}: ${userMessage}\nMaki: ${botReply}\n\nWhat new facts about Maki should be added?`,
     },
   ];
   try {
-    const result = await ollamaChat(messages, true);
+    const result = await ollamaChat(messages);
     if (!result || result === "NO_UPDATE") return existingFacts;
-    return existingFacts ? `${existingFacts}\n${result}` : result;
+    const newFacts = parseExtractedLines(result);
+    return [...(existingFacts || []), ...newFacts];
   } catch (err) {
     console.error("Self memory extraction failed:", err.message);
     return existingFacts;
@@ -410,6 +455,7 @@ client.once("clientReady", () => {
   console.log(`Logged in as ${client.user.tag}`);
   console.log(`Watching channels: ${CHANNEL_IDS.join(", ")}`);
   console.log(`Using model: ${MODEL} at ${OLLAMA_URL}`);
+  console.log(`Thinking mode: ${modelSupportsThinking(MODEL) ? "supported" : "not supported (omitted)"}`);
 });
 
 client.on("messageCreate", async (message) => {
@@ -421,27 +467,29 @@ client.on("messageCreate", async (message) => {
 
   await message.channel.sendTyping();
 
-  const userId = message.author.id;
+  const userId   = message.author.id;
   const username = message.author.username;
-  const memory = loadUserMemory(userId);
-  const self = loadSelfMemory();
+  const memory   = loadUserMemory(userId);
+  const self     = loadSelfMemory();
 
-  // Trim history to rolling window before building prompt
   while (memory.history.length > MAX_HISTORY) memory.history.shift();
 
   // ── Build dynamic system prompt ──────────────────────────────────────────
-  const familiarityLabel = getFamiliarityLabel(memory.familiarity);
+  const familiarityLabel             = getFamiliarityLabel(memory.familiarity);
   const { timeOfDay, sinceLastSeen } = getTimeContext(memory.lastSeen);
 
   let systemContent = SYSTEM_PROMPT;
   systemContent += `\n\nYour relationship with ${username}: ${familiarityLabel}`;
   systemContent += `\n\nTime context: It is currently ${timeOfDay}. ${sinceLastSeen} Let this subtly color your mood and energy -- do not reference it directly or announce it.`;
 
-  if (self.facts) {
-    systemContent += `\n\nBackground self-knowledge -- this is who you are, not a list of things to announce. Let it shape what you gravitate toward, what you react to, and what you avoid. Do not quote these facts back directly:\n${self.facts}`;
+  const selfStr = factsToString(self.facts);
+  if (selfStr) {
+    systemContent += `\n\nBackground self-knowledge -- this is who you are, not a list of things to announce. Let it shape what you gravitate toward, what you react to, and what you avoid. Do not quote these facts back directly:\n${selfStr}`;
   }
-  if (memory.facts) {
-    systemContent += `\n\nWhat you remember about ${username}:\n${memory.facts}`;
+
+  const userStr = factsToString(memory.facts);
+  if (userStr) {
+    systemContent += `\n\nWhat you remember about ${username}:\n${userStr}`;
   }
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -453,7 +501,7 @@ client.on("messageCreate", async (message) => {
   ];
 
   try {
-    let reply = await ollamaChat(messages, false);
+    let reply = await ollamaChat(messages);
 
     if (!reply) {
       await message.reply("...");
@@ -465,31 +513,28 @@ client.on("messageCreate", async (message) => {
 
     if (detectLoop(memory.history)) {
       console.log(`[Loop detected] Attempting self-correction for ${username}`);
-      memory.history.pop(); // remove looped reply before correcting
+      memory.history.pop();
       const corrected = await correctLoop(messages, reply);
       if (corrected) {
         reply = corrected;
-        console.log(`[Loop corrected] Successfully generated new reply`);
+        console.log(`[Loop corrected] New reply generated`);
       }
       memory.history.push({ role: "assistant", content: reply });
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Run extraction passes in background -- reply goes out immediately
     Promise.all([
       extractUserFacts(username, userText, reply, memory.facts),
       extractSelfFacts(username, userText, reply, self.facts),
     ]).then(([userResult, updatedSelfFacts]) => {
-      memory.facts = userResult.facts;
+      memory.facts        = userResult.facts;
       memory.familiarity += BASE_POINTS;
       if (userResult.newFacts) memory.familiarity += PERSONAL_BONUS;
       saveUserMemory(userId, memory);
-
       self.facts = updatedSelfFacts;
       saveSelfMemory(self);
     });
 
-    // Discord 2000 char limit -- split longer replies
     if (reply.length <= 2000) {
       await message.reply(reply);
     } else {
