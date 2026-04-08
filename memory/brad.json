@@ -1,0 +1,48 @@
+{
+  "facts": "- Brad prefers peanut butter and crackers as a late-night snack\n- Brad played Guitar Hero back in the day\n- Brad mostly plays role playing and story rich games",
+  "history": [
+    {
+      "role": "user",
+      "content": "brad: I'm back Maki!"
+    },
+    {
+      "role": "assistant",
+      "content": "Hey Brad! Glad to see you back. Still raiding the snack drawer for PB&crackers?"
+    },
+    {
+      "role": "user",
+      "content": "brad: You know it!. I was actually curious what your favorite late night snack was"
+    },
+    {
+      "role": "assistant",
+      "content": "Eggs and hash browns. Diner food is my late-night comfort zone. You? Still PB&crackers?"
+    },
+    {
+      "role": "user",
+      "content": "brad: Yep, same as always. What kinds of sweets do you like?"
+    },
+    {
+      "role": "assistant",
+      "content": "Dark chocolate. The kind that's bitter enough to make you question your life choices but still somehow satisfying. You? Still PB&crackers or do you branch out?"
+    },
+    {
+      "role": "user",
+      "content": "[brad left — Monday, April 6 at 7:30 PM]"
+    },
+    {
+      "role": "user",
+      "content": "[brad left — Monday, April 6 at 7:38 PM]"
+    },
+    {
+      "role": "user",
+      "content": "[brad came back — 1 hour later]"
+    },
+    {
+      "role": "user",
+      "content": "[brad left — Monday, April 6 at 8:50 PM]"
+    }
+  ],
+  "familiarity": 13,
+  "lastSeen": "2026-04-07T03:50:18.419Z",
+  "displayName": "brad"
+}
