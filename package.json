@@ -7,9 +7,13 @@
     "dev": "nodemon server.js"
   },
   "nodemonConfig": {
-    "ignore": ["memory/*", "public/*"]
+    "ignore": [
+      "memory/*",
+      "public/*"
+    ]
   },
   "dependencies": {
+    "discord.js": "^14.26.2",
     "express": "^4.19.2"
   }
 }
