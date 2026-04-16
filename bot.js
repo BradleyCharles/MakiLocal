@@ -47,6 +47,19 @@ const FAMILIARITY_LEVELS = [
 const BASE_POINTS    = 1;
 const PERSONAL_BONUS = 2;
 
+// Short display tiers used by commands (separate from the prompt labels above)
+const FAMILIARITY_TIERS = [
+  { threshold: 60, label: "Close" },
+  { threshold: 30, label: "Genuine" },
+  { threshold: 15, label: "Comfortable" },
+  { threshold: 5,  label: "Acquaintance" },
+  { threshold: 0,  label: "New" },
+];
+
+function getFamiliarityTier(score) {
+  return FAMILIARITY_TIERS.find(t => score >= t.threshold)?.label ?? "New";
+}
+
 function getFamiliarityLabel(score) {
   let label = FAMILIARITY_LEVELS[0].label;
   for (const level of FAMILIARITY_LEVELS) {
@@ -445,6 +458,178 @@ async function extractSelfFacts(username, userMessage, botReply, existingFacts) 
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Command handler ───────────────────────────────────────────────────────────
+async function handleCommand(message) {
+  const args    = message.content.trim().split(/\s+/);
+  const command = args[0].toLowerCase();
+  const isAdmin = message.author.id === process.env.ADMIN_ID;
+  const userId  = message.author.id;
+
+  switch (command) {
+
+    // ── !options ──────────────────────────────────────────────────────────────
+    case "!options": {
+      const lines = [
+        "**Available commands:**",
+        "",
+        "`!options` — show this list",
+        "`!familiarity` — see your current familiarity score and relationship tier",
+        "`!facts` — see what Maki knows about you",
+        "`!clearhistory` — wipe your conversation history (facts kept)",
+        "`!resetme` — wipe your history and facts (familiarity kept)",
+        "`!fullreset` — wipe everything, start completely fresh",
+      ];
+      if (isAdmin) {
+        lines.push(
+          "",
+          "**Admin only:**",
+          "`!welcome` — post the welcome message in this channel",
+          "`!inspect @user` — view a user's facts and familiarity score",
+          "`!resetuser @user` — fully reset a user's memory",
+          "`!setfamiliarity @user <score>` — manually set a user's familiarity score",
+        );
+      }
+      await message.channel.send(lines.join("\n"));
+      return true;
+    }
+
+    // ── !familiarity ──────────────────────────────────────────────────────────
+    case "!familiarity": {
+      const memory = loadUserMemory(userId);
+      const score  = memory.familiarity ?? 0;
+      const tier   = getFamiliarityTier(score);
+      await message.channel.send(`Your familiarity score is **${score}** — tier: **${tier}**`);
+      return true;
+    }
+
+    // ── !facts ────────────────────────────────────────────────────────────────
+    case "!facts": {
+      const memory = loadUserMemory(userId);
+      const facts  = memory.facts ?? [];
+      if (facts.length === 0) {
+        await message.channel.send("Nothing stored yet.");
+        return true;
+      }
+      const core   = facts.filter(f => f.weight === "core");
+      const recent = facts.filter(f => f.weight === "recent");
+      const stale  = facts.filter(f => f.weight === "stale");
+      const lines  = ["**What Maki knows about you:**"];
+      if (core.length)   lines.push("", "**Core**",   ...core.map(f => `• ${f.text}`));
+      if (recent.length) lines.push("", "**Recent**", ...recent.map(f => `• ${f.text}`));
+      if (stale.length)  lines.push("", "**Stale** *(may no longer apply)*", ...stale.map(f => `• ${f.text}`));
+      await message.channel.send(lines.join("\n"));
+      return true;
+    }
+
+    // ── !clearhistory ─────────────────────────────────────────────────────────
+    case "!clearhistory": {
+      const memory  = loadUserMemory(userId);
+      memory.history = [];
+      saveUserMemory(userId, memory);
+      await message.channel.send("Conversation history cleared. Facts and familiarity are still intact.");
+      return true;
+    }
+
+    // ── !resetme ──────────────────────────────────────────────────────────────
+    case "!resetme": {
+      const memory  = loadUserMemory(userId);
+      memory.history = [];
+      memory.facts   = [];
+      saveUserMemory(userId, memory);
+      await message.channel.send("History and facts cleared. Familiarity score kept.");
+      return true;
+    }
+
+    // ── !fullreset ────────────────────────────────────────────────────────────
+    case "!fullreset": {
+      saveUserMemory(userId, { history: [], facts: [], familiarity: 0, lastSeen: null });
+      await message.channel.send("Full reset done. Clean slate.");
+      return true;
+    }
+
+    // ── !welcome (admin) ──────────────────────────────────────────────────────
+    case "!welcome": {
+      if (!isAdmin) return false;
+      const welcomeMessage = `Hey, welcome. Really -- I'm glad you stopped by.
+
+I'm Maki. I live in the chat channels and I genuinely like talking to people, so don't be shy.
+
+A couple of things worth knowing before you dive in: I remember what you tell me. Not in a creepy way -- more like a friend who actually pays attention. The more we talk, the more I'll feel like someone you know rather than something you're testing. I have a whole thing going on under the hood: moods, opinions, a history I'll share if you ask the right questions. I don't volunteer everything up front, but it's all there.
+
+I'm not trying to be your assistant. I'm just here to have a real conversation. Give me something to work with and I will.
+
+Heads up: this is an active development project. Conversations and usernames may be referenced in documentation or presentations. Wanted to be honest about that from the start.
+
+Want to see how it's built? <YOUR_GITHUB_URL>
+
+Otherwise -- jump in. I don't bite.`;
+      await message.channel.send(welcomeMessage);
+      return true;
+    }
+
+    // ── !inspect (admin) ──────────────────────────────────────────────────────
+    case "!inspect": {
+      if (!isAdmin) return false;
+      const target = message.mentions.users.first();
+      if (!target) {
+        await message.channel.send("Usage: `!inspect @user`");
+        return true;
+      }
+      const memory = loadUserMemory(target.id);
+      const score  = memory.familiarity ?? 0;
+      const tier   = getFamiliarityTier(score);
+      const facts  = memory.facts ?? [];
+      const core   = facts.filter(f => f.weight === "core");
+      const recent = facts.filter(f => f.weight === "recent");
+      const stale  = facts.filter(f => f.weight === "stale");
+      const lines  = [
+        `**Memory report for ${target.username}**`,
+        `Familiarity: **${score}** (${tier})`,
+        `History entries: **${(memory.history ?? []).length}**`,
+      ];
+      if (core.length)   lines.push("", "**Core facts**",   ...core.map(f => `• ${f.text}`));
+      if (recent.length) lines.push("", "**Recent facts**", ...recent.map(f => `• ${f.text}`));
+      if (stale.length)  lines.push("", "**Stale facts**",  ...stale.map(f => `• ${f.text}`));
+      if (facts.length === 0) lines.push("", "No facts stored yet.");
+      await message.channel.send(lines.join("\n"));
+      return true;
+    }
+
+    // ── !resetuser (admin) ────────────────────────────────────────────────────
+    case "!resetuser": {
+      if (!isAdmin) return false;
+      const target = message.mentions.users.first();
+      if (!target) {
+        await message.channel.send("Usage: `!resetuser @user`");
+        return true;
+      }
+      saveUserMemory(target.id, { history: [], facts: [], familiarity: 0, lastSeen: null });
+      await message.channel.send(`Memory reset for ${target.username}.`);
+      return true;
+    }
+
+    // ── !setfamiliarity (admin) ───────────────────────────────────────────────
+    case "!setfamiliarity": {
+      if (!isAdmin) return false;
+      const target = message.mentions.users.first();
+      const score  = parseInt(args[2]);
+      if (!target || isNaN(score)) {
+        await message.channel.send("Usage: `!setfamiliarity @user <score>`");
+        return true;
+      }
+      const memory      = loadUserMemory(target.id);
+      memory.familiarity = score;
+      saveUserMemory(target.id, memory);
+      await message.channel.send(`Familiarity for ${target.username} set to **${score}** (${getFamiliarityTier(score)}).`);
+      return true;
+    }
+
+    default:
+      return false;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ── Discord client ────────────────────────────────────────────────────────────
 const client = new Client({
   intents: [
@@ -467,6 +652,11 @@ client.on("messageCreate", async (message) => {
 
   const userText = message.content.trim();
   if (!userText) return;
+
+  if (userText.startsWith("!")) {
+    const handled = await handleCommand(message);
+    if (handled) return;
+  }
 
   await message.channel.sendTyping();
 
